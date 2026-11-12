@@ -1,0 +1,344 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum BankDifficulty {
+  Easy
+  Medium
+  Hard
+}
+
+enum QuestionType {
+  CODING
+  DESCRIPTIVE
+  MCQ
+}
+
+model QuestionBank {
+  id          Int            @id @default(autoincrement())
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  tag         String         @unique
+  label       String
+  description String
+
+  questions   BankQuestion[]
+}
+
+model BankQuestion {
+  id           Int          @id @default(autoincrement())
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  bankId       Int
+  bank         QuestionBank @relation(fields: [bankId], references: [id], onDelete: Cascade)
+
+  title        String
+  description  String
+  difficulty   BankDifficulty
+  tags         String[]
+  defaultScore Int          @default(10)
+  type         QuestionType @default(CODING)
+  options      String[]
+  functionName String?
+  parameters   Json?
+  returnType   String?
+  authorLabel  String?
+
+  testCases    BankTestCase[]
+}
+
+model BankTestCase {
+  id             Int          @id @default(autoincrement())
+  createdAt      DateTime     @default(now())
+
+  questionId     Int
+  question       BankQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  input          String
+  expectedOutput String
+  isHidden       Boolean      @default(false)
+}
+
+model Faculty {
+  // id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employeeID Int  @id
+  email      String  @unique
+  password   String
+
+  firstName  String
+  lastName   String
+
+  classrooms Classroom[] // One faculty has multiple classrooms
+  sessions   LiveCodingSession[] // Faculty can create multiple live coding sessions
+}
+
+model Classroom {
+  id         Int       @id @default(autoincrement())
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  course     String
+  semester   Semester
+
+  facultyID  Int
+  faculty    Faculty @relation(fields: [facultyID], references: [employeeID], onDelete: Cascade)
+
+  batches    BatchOnClassroom[] // Many-to-Many relationship
+  sessions   LiveCodingSession[] // One classroom can have multiple live coding sessions
+
+}
+
+enum Semester {
+  ONE
+  TWO
+  THREE
+  FOUR
+  FIVE
+  SIX
+  SEVEN
+  EIGHT
+}
+
+// enum Course {
+//   DAA
+//   DS
+// }
+
+model Batch {
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  semester    Semester
+  batchId     Int
+
+  students    Student[]
+  classrooms  BatchOnClassroom[] // Many-to-Many relationship
+
+  @@id([semester, batchId]) // Composite Primary Key
+}
+
+model BatchOnClassroom {
+  classroomId Int
+  batchId     Int
+  semester    Semester
+
+  classroom   Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+  batch       Batch     @relation(fields: [batchId, semester], references: [batchId, semester], onDelete: Cascade)
+
+  @@id([classroomId, batchId, semester]) // Composite Primary Key
+}
+
+model Student {
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  email String @unique
+  password String
+
+  sap       Int      @id // Primary Key
+  roll      String   @unique
+
+  firstName String
+  lastName  String
+
+  batchId   Int
+  semester  Semester
+
+  batch     Batch    @relation(fields: [batchId, semester], references: [batchId, semester], onDelete: Cascade)
+  sessions  StudentSession[] // Many-to-Many with LiveCodingSession
+  submissions CodeSubmission[]
+  leaderboardEntries LeaderboardEntry[]
+  results    Result[]
+  aiUsages   AiUsage[]
+  proctorLogs ProctorLog[]
+
+  @@index([batchId, semester])
+}
+
+model LiveCodingSession {
+  id          Int       @id @default(autoincrement())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt()
+
+  classroomId Int
+  classroom   Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+
+  facultyId   Int
+  faculty     Faculty @relation(fields: [facultyId], references: [employeeID], onDelete: Cascade)
+
+  title       String
+  description String?
+  startTime   DateTime
+  endTime     DateTime?
+  isActive    Boolean   @default(true)
+  showResultsImmediately Boolean @default(true)
+
+  totalScore  Int       @default(0) // Auto-updates when questions are added/removed
+
+  questions   CodingQuestion[]
+  students    StudentSession[]
+  submissions CodeSubmission[]
+  leaderboard LeaderboardEntry[]
+  results     Result[]
+  aiUsages    AiUsage[]
+  proctorLogs ProctorLog[]
+}
+
+model CodingQuestion {
+  id           Int          @id @default(autoincrement())
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt()
+
+  sessionId    Int
+  session      LiveCodingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  title        String
+  description  String
+  score        Int          @default(10)
+  type         QuestionType @default(CODING)
+  options      String[]     // MCQ choices (A, B, C, D…)
+  functionName String?
+  parameters   Json?
+  returnType   String?
+
+  aiEnabled    Boolean      @default(false)
+  aiMaxUses    Int          @default(3)
+
+  testCases    TestCase[]
+  submissions  CodeSubmission[]
+  aiUsages     AiUsage[]
+}
+
+model AiUsage {
+  id         Int      @id @default(autoincrement())
+  createdAt  DateTime @default(now())
+
+  sessionId  Int
+  questionId Int
+  studentId  Int
+  useCount   Int      @default(0)
+
+  session    LiveCodingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  question   CodingQuestion    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  student    Student           @relation(fields: [studentId], references: [sap], onDelete: Cascade)
+
+  @@unique([sessionId, questionId, studentId])
+}
+
+model TestCase {
+  id           Int       @id @default(autoincrement())
+  createdAt    DateTime  @default(now())
+
+  questionId   Int
+  question     CodingQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  input        String
+  expectedOutput String
+  isHidden     Boolean @default(false) // Hidden test cases for evaluation
+}
+
+model StudentSession {
+  sessionId   Int
+  studentId   Int
+
+  joinedAt    DateTime  @default(now())
+  leftAt      DateTime?
+
+  session     LiveCodingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student     Student           @relation(fields: [studentId], references: [sap], onDelete: Cascade)
+
+  @@id([sessionId, studentId]) // Composite Primary Key
+}
+
+model CodeSubmission {
+  id           Int       @id @default(autoincrement())
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt()
+
+  sessionId    Int
+  studentId    Int
+  questionId   Int
+
+  code         String
+  language     String
+  output       String?
+  error        String?
+  isSuccessful Boolean  @default(false)
+  testResults  Json?
+
+  score        Int       @default(0) // Full points if all test cases pass
+
+  session      LiveCodingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student      Student           @relation(fields: [studentId], references: [sap], onDelete: Cascade)
+  question     CodingQuestion    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, studentId, questionId]) // Ensure only one submission per question per session
+}
+
+model LeaderboardEntry {
+  id          Int       @id @default(autoincrement())
+  sessionId   Int
+  studentId   Int
+
+  totalScore  Int       @default(0) // Sum of all correct submissions
+
+  session     LiveCodingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student     Student           @relation(fields: [studentId], references: [sap], onDelete: Cascade)
+
+  @@unique([sessionId, studentId]) // One entry per student per session
+}
+
+enum ProctorEventType {
+  TAB_SWITCH
+  COPY
+  PASTE
+  CUT
+  WINDOW_BLUR
+  NO_FACE_DETECTED
+  MULTIPLE_FACES
+  VOICE_DETECTED
+  FULLSCREEN_EXIT
+}
+
+model ProctorLog {
+  id        Int              @id @default(autoincrement())
+  createdAt DateTime         @default(now())
+
+  sessionId Int
+  studentId Int
+  type      ProctorEventType
+  content   String?
+
+  session   LiveCodingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student   Student           @relation(fields: [studentId], references: [sap], onDelete: Cascade)
+
+  @@index([sessionId, studentId])
+}
+
+model Result {
+  id           Int       @id @default(autoincrement())
+  sessionId    Int
+  studentId    Int
+
+  totalScore   Int       @default(0) // Final score for session
+  accuracy     Float?    // Percentage of correct submissions
+  executionTime Float?   // Total time taken
+  rank         Int?      // Final rank after session ends
+
+  finalizedAt  DateTime  @default(now()) // Marks when session ended
+
+  session      LiveCodingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student      Student           @relation(fields: [studentId], references: [sap], onDelete: Cascade)
+
+  @@unique([sessionId, studentId]) // One result per student per session
+}
